@@ -6,6 +6,8 @@
 
 ## 当前基线与结论
 
+- **2026-11-16 GitHub 云端打包：** 已上传到 767560479/mcarplay-k80，首次 Android CI 与 Signed APK 均成功。已配置独立固定签名并下载核对证书和 APK 校验值；源码仓库不含签名私钥、密码和本机配置。运行链接与产物指纹见 docs/K80-GITHUB-ACTIONS.md；没有新增实车验证。
+
 - **2026-11-16 K80 本地修改版：** 导入上游提交 8e25e0f69ab7a3bec14649542adea6eb22f74f9a，新增本机组件检查、自检快捷入口、本地更新保护和 Windows 构建脚本。已通过 ADB 只读核对手机与组件版本，尚未安装运行或连接车机；没有修改协议参数或新增 USB 投屏。构建与测试结果见 BUILD_VALIDATION.md。
 
 - **11 月 14 日 issue #62 诊断补充（仅离线验证，未上车，未改协议行为）：** 奔驰 MB_E-P-4（AirPlay 480.7.4，2025 款 GLC）报告链路全通、CarWith 透传 1392 帧 / 109 s，车机却无画面、点 CarPlay 图标无反应。报告里三条线索此前只能靠「缺席」推断：`/info` 的 `displays[0]`（1278 高）与 `displayPanels[0].initialVideoStreams`（1728 高）几何冲突、`modesChanged` 应答恒为 42B `{}`、MIB3 突发后车机零订阅。本次只新增三类诊断（显示表面对照、模式切换应答归类计数、MIB3 订阅观察），**未**按面板几何改协商、也**未**改 `modesChanged` 时序——两者都需实车对照。详见 `docs/CARWITH-ENTRY-FINDINGS.md`。已通过新增 JVM 单测与本地门禁；无设备或实车证据。
