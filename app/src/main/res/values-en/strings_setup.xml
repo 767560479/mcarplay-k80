@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="setup_title">First connection checks</string>
+    <string name="setup_local_build_label">Local build information</string>
+    <string name="setup_wireless_scope">Check phone streaming before connecting to wireless CarPlay. USB projection is not supported in this build.</string>
+    <string name="setup_checking">Reading installed component versions…</string>
+    <string name="setup_summary">CarWith: %1$s\nXiaomi CarLife: %2$s\nAmap: %3$s\nNetEase Cloud Music: %4$s</string>
+    <string name="setup_details">Device checks and connection steps</string>
+    <string name="setup_self_test">Run / stop CarWith stream self-test</string>
+    <string name="setup_current_device">Phone: %1$s %2$s</string>
+    <string name="setup_current_system">Android: %1$s\nSystem build: %2$s</string>
+    <string name="setup_reference" tools:ignore="TypographyDashes">User-reported test target: K80 · HyperOS 3.0.309.0 · CarWith 4.0.21-20261016 · 2024 ninth-generation Camry with wireless CarPlay.</string>
+    <string name="setup_version_match">CarWith matches the recorded version. Streaming and vehicle tests are still required.</string>
+    <string name="setup_version_other">CarWith differs from the recorded version or could not be read. Verify actual streaming; no downgrade is required.</string>
+    <string name="setup_components_required">The stream self-test requires enabled CarWith and Xiaomi CarLife components. Check their system app status first.</string>
+    <string name="setup_validation_steps">1. Park, disconnect other projection receivers, and run the stream self-test.\n2. Confirm real video frames, then stop the self-test.\n3. Select the receiver, open wireless CarPlay on the head unit, and connect manually.\n4. Check video, touch, Amap navigation and NetEase Cloud Music audio.\n5. Check navigation mixing, screen-off behavior and reconnecting. Export redacted diagnostics if a step fails.\n\nAn installed app may not be available in CarWith. App entry, login and audio need testing. This device combination has not passed vehicle acceptance.</string>
+    <string name="setup_installed">Installed, version unknown</string>
+    <string name="setup_disabled">Disabled</string>
+    <string name="setup_missing">Not installed</string>
+    <string name="setup_unknown">Could not read; check system settings</string>
+    <string name="setup_local_build_title">Local build: update from this project</string>
+    <string name="setup_local_build_message">Current version: %1$s\n\nThis build is derived from mcarplay source. Upstream APK updates are disabled. Update with a local build signed by the same key.\n\nIf an upstream release is already installed, a different signature prevents replacing it. Back up diagnostics and settings before considering removal.\n\nWireless operation needs vehicle testing. USB projection has not been implemented.</string>
+</resources>

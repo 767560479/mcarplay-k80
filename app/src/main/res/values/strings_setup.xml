@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="setup_title">首次连接检查</string>
+    <string name="setup_local_build_label">本地版本说明</string>
+    <string name="setup_wireless_scope">先验证手机出流，再连接车机无线 CarPlay。本版暂不支持 USB 有线投屏。</string>
+    <string name="setup_checking">正在读取本机组件版本…</string>
+    <string name="setup_summary">CarWith：%1$s\n小米 CarLife：%2$s\n高德地图：%3$s\n网易云音乐：%4$s</string>
+    <string name="setup_details">查看设备检查与连接步骤</string>
+    <string name="setup_self_test">运行 / 停止 CarWith 出流自检</string>
+    <string name="setup_current_device">当前手机：%1$s %2$s</string>
+    <string name="setup_current_system">Android：%1$s\n系统构建：%2$s</string>
+    <string name="setup_reference" tools:ignore="TypographyDashes">本次验证目标（用户提供）：K80 · HyperOS 3.0.309.0 · CarWith 4.0.21-20261016 · 2024 九代凯美瑞无线 CarPlay。</string>
+    <string name="setup_version_match">CarWith 版本与目标记录一致，仍需出流自检和实车验证。</string>
+    <string name="setup_version_other">CarWith 版本与目标记录不同或尚未读取；以实际出流自检为准，不要求降级。</string>
+    <string name="setup_components_required">出流自检需要已启用的 CarWith 和小米 CarLife；请先检查系统应用状态。</string>
+    <string name="setup_validation_steps">1. 停车操作，先断开其他投屏接收端，运行出流自检。\n2. 确认收到真实视频帧后停止自检。\n3. 选择目标车机，进入车机无线 CarPlay，手动发起连接。\n4. 检查画面、触控、高德导航与网易云声音。\n5. 最后检查播报混音、息屏和重连；失败时导出脱敏诊断报告。\n\n已安装应用不代表其一定出现在 CarWith 中；应用入口、登录、播报与播放均需实测。本版尚无这套设备的实车验收结果。</string>
+    <string name="setup_installed">已安装，版本未知</string>
+    <string name="setup_disabled">已停用</string>
+    <string name="setup_missing">未安装</string>
+    <string name="setup_unknown">读取失败，请到系统设置确认</string>
+    <string name="setup_local_build_title">本地定制版，使用本项目构建更新</string>
+    <string name="setup_local_build_message">当前版本：%1$s\n\n本版从 mcarplay 源码独立构建，已停用上游 APK 更新。后续请使用同一签名构建的本地版本更新。\n\n如果手机已安装上游正式版，签名不同会阻止覆盖安装；不要直接卸载清除配置，先备份诊断和设置。\n\n无线连接待实车验证；USB 有线投屏尚未实现。</string>
+</resources>

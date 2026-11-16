@@ -1,0 +1,287 @@
+package com.mcarplay.app.bt
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ReconnectCircuitBreakerTest {
+    private val breaker = ReconnectCircuitBreaker()
+    private val address = "AA:BB:CC:DD:EE:01"
+    private val t0 = 1_000_000L
+
+    private fun fail(
+        state: ReconnectCircuitBreaker.State,
+        at: Long,
+        peer: String? = address,
+    ): ReconnectCircuitBreaker.Failure = breaker.onFastFailure(state, peer, at)
+
+    @Test
+    fun tripsOnTheThirdFastFailureWithinTheWindow() {
+        var state = fail(ReconnectCircuitBreaker.State(), t0).state
+        assertFalse(breaker.isBlocked(state, address, t0))
+
+        state = fail(state, t0 + 10_000L).state
+        assertFalse(breaker.isBlocked(state, address, t0 + 10_000L))
+
+        val third = fail(state, t0 + 20_000L)
+        assertTrue(third.tripped)
+        assertEquals(3, third.state.failures)
+        assertTrue(breaker.isBlocked(third.state, address, t0 + 20_000L))
+        assertTrue(breaker.isBlocked(third.state, address.lowercase(), t0 + 20_000L))
+    }
+
+    @Test
+    fun failuresOutsideTheWindowRestartTheCount() {
+        var state = fail(ReconnectCircuitBreaker.State(), t0).state
+        state = fail(state, t0 + 10_000L).state
+        // 第 3 次已超过 5 分钟窗口：从 1 重新计数，不应熔断
+        val late = fail(state, t0 + ReconnectCircuitBreaker.WINDOW_MILLIS + 1L)
+        assertFalse(late.tripped)
+        assertEquals(1, late.state.failures)
+        assertFalse(breaker.isBlocked(late.state, address, t0 + ReconnectCircuitBreaker.WINDOW_MILLIS + 1L))
+    }
+
+    @Test
+    fun blockOnlyAppliesToTheSameReceiver() {
+        var state = ReconnectCircuitBreaker.State()
+        repeat(3) { index ->
+            state = fail(state, t0 + index * 1_000L).state
+        }
+        assertTrue(breaker.isBlocked(state, address, t0 + 5_000L))
+        assertFalse(breaker.isBlocked(state, "AA:BB:CC:DD:EE:02", t0 + 5_000L))
+    }
+
+    @Test
+    fun blockExpiresAndTheNextFailureStartsANewCount() {
+        var state = ReconnectCircuitBreaker.State()
+        repeat(3) { index ->
+            state = fail(state, t0 + index * 1_000L).state
+        }
+        val blockedUntil = state.blockedUntilMs
+        assertFalse(breaker.isBlocked(state, address, blockedUntil))
+        assertEquals(0L, breaker.remainingMillis(state, blockedUntil))
+
+        val after = fail(state, blockedUntil + 1_000L)
+        assertFalse(after.tripped)
+        assertEquals(1, after.state.failures)
+        assertEquals(0L, after.state.blockedUntilMs)
+    }
+
+    @Test
+    fun successClearsTheBlock() {
+        var state = ReconnectCircuitBreaker.State()
+        repeat(3) { index ->
+            state = fail(state, t0 + index * 1_000L).state
+        }
+        state = breaker.onSuccess(state)
+        assertEquals(0, state.failures)
+        assertEquals(0L, state.blockedUntilMs)
+        assertFalse(breaker.isBlocked(state, address, t0 + 1_000L))
+    }
+
+    @Test
+    fun failuresWithoutAKnownPeerAreNeitherCountedNorMatched() {
+        var state = ReconnectCircuitBreaker.State()
+        repeat(3) { index ->
+            val failure = breaker.onFastFailure(state, null, t0 + index * 1_000L)
+            assertFalse(failure.tripped)
+            assertEquals(0, failure.state.failures)
+            assertEquals(0L, failure.state.blockedUntilMs)
+            state = failure.state
+        }
+        assertFalse(breaker.isBlocked(state, address, t0 + 5_000L))
+        assertFalse(breaker.isBlocked(state, null, t0 + 5_000L))
+    }
+
+    @Test
+    fun aBlockForOneReceiverDoesNotMatchAnUnknownAutomaticTarget() {
+        var state = ReconnectCircuitBreaker.State()
+        repeat(3) { index ->
+            state = fail(state, t0 + index * 1_000L).state
+        }
+        assertTrue(breaker.isBlocked(state, address, t0 + 5_000L))
+        // 默认自动模式没有 TargetDevicePrefs：A 车的熔断不能拦住“所有接收端”。
+        assertFalse(breaker.isBlocked(state, null, t0 + 5_000L))
+    }
+
+    @Test
+    fun legacyStoredStateWithoutAnAddressNeverBlocksAConcreteReceiver() {
+        val legacy =
+            ReconnectCircuitBreaker.State(
+                address = null,
+                failures = 3,
+                firstFailureAtMs = t0,
+                lastFailureAtMs = t0 + 2_000L,
+                blockedUntilMs = t0 + ReconnectCircuitBreaker.COOLDOWN_MILLIS,
+            )
+        assertTrue(breaker.isBlockActive(legacy, t0 + 1_000L))
+        assertFalse(breaker.isBlocked(legacy, address, t0 + 1_000L))
+        assertFalse(breaker.isBlocked(legacy, null, t0 + 1_000L))
+    }
+
+    @Test
+    fun failuresAreKeyedPerReceiverSoOneCarCannotTripAnother() {
+        val other = "AA:BB:CC:DD:EE:02"
+        var state = fail(ReconnectCircuitBreaker.State(), t0).state
+        state = fail(state, t0 + 1_000L, other).state
+        // 没有熔断时换一台车机重新计数：A 的失败不累计到 B，B 也不会触发 A 的熔断。
+        assertEquals(1, state.failures)
+        assertEquals(other, state.address)
+        assertFalse(breaker.isBlocked(state, address, t0 + 2_000L))
+        assertFalse(breaker.isBlocked(state, other, t0 + 2_000L))
+    }
+
+    @Test
+    fun anotherReceiversFailuresAreCountedWhileTheFirstIsCoolingDown() {
+        val other = "AA:BB:CC:DD:EE:02"
+        val store = ReconnectCircuitBreakerStore(breaker)
+        var states = emptyMap<String, ReconnectCircuitBreaker.State>()
+        repeat(3) { index ->
+            states = store.recordFailure(states, address, "a$index", t0 + index * 1_000L).first
+        }
+        assertNotNull(store.block(states, address, t0 + 5_000L))
+
+        // A 冷却期间 B 的失败照常累计，但不会解除 A 的熔断。
+        repeat(2) { index ->
+            states = store.recordFailure(states, other, "b$index", t0 + 6_000L + index * 1_000L).first
+        }
+        assertNull(store.block(states, other, t0 + 8_000L))
+        assertEquals(2, states[store.keyOf(other)]!!.failures)
+        assertNotNull(store.block(states, address, t0 + 8_000L))
+
+        // B 的第 3 次也独立熔断；A、B 各自持有自己的冷却期。
+        val (afterThird, thirdBlock) = store.recordFailure(states, other, "b2", t0 + 9_000L)
+        assertNotNull(thirdBlock)
+        assertNotNull(store.block(afterThird, other, t0 + 9_000L))
+        assertNotNull(store.block(afterThird, address, t0 + 9_000L))
+
+        // A 的冷却结束后只解除 A；B 仍在自己的冷却期内。
+        assertNull(store.block(afterThird, address, t0 + 3_000L + ReconnectCircuitBreaker.COOLDOWN_MILLIS))
+        assertNotNull(store.block(afterThird, other, t0 + 3_000L + ReconnectCircuitBreaker.COOLDOWN_MILLIS))
+    }
+
+    @Test
+    fun duplicateAttemptForTheSameReceiverIsRecordedOnce() {
+        val store = ReconnectCircuitBreakerStore(breaker)
+        val states = store.recordFailure(emptyMap(), address, "attempt-a", t0).first
+        val (deduped, block) = store.recordFailure(states, address, "attempt-a", t0 + 1_000L)
+        assertNull(block)
+        assertEquals(1, deduped[store.keyOf(address)]!!.failures)
+    }
+
+    /**
+     * 回归（PR #67 审查 P1）：端点前失败的轮次若一直复用同一条已结束的时间线，
+     * 每轮都会被按 attempt 去重，三次熔断永远攒不满。每轮拿到新 attempt 后必须能正常累计。
+     */
+    @Test
+    fun onlyFreshAttemptsAccumulateToTheCircuitBreaker() {
+        val store = ReconnectCircuitBreakerStore(breaker)
+        var states = emptyMap<String, ReconnectCircuitBreaker.State>()
+        // 三轮端点前失败：每轮一条新时间线（修复后的行为）→ 第三次触发熔断。
+        var block: ReconnectCircuitBreakerStore.Block? = null
+        repeat(3) { index ->
+            val recorded = store.recordFailure(states, address, "bt_retry-$index", t0 + index * 61_000L)
+            states = recorded.first
+            block = recorded.second
+        }
+        assertNotNull("每轮新 attempt 应在第 3 次触发熔断", block)
+        assertEquals(3, states[store.keyOf(address)]!!.failures)
+
+        // 对照：复用同一 attempt（修复前的行为）始终只记 1 次，永远不会熔断。
+        var reused = emptyMap<String, ReconnectCircuitBreaker.State>()
+        repeat(3) { index ->
+            reused = store.recordFailure(reused, address, "bt_retry", t0 + index * 61_000L).first
+        }
+        assertEquals(1, reused[store.keyOf(address)]!!.failures)
+        assertNull(store.block(reused, address, t0))
+    }
+
+    /**
+     * 回归（PR #67 审查第二轮 P2）：熔断触发后若再为「后续轮次」开一条空时间线，
+     * 随后的 disconnect 会拿这条新 attempt 再记一次失败——把 3 次改写成 4 次、
+     * 再延长一次冷却期，并把 recordedAttempt 指向一条几乎零时长的合成轮次。
+     * 修复后熔断分支不再开新 attempt，因此这里守住「第 3 次就是最后一次」。
+     */
+    @Test
+    fun aTrippedBreakerIsNotChargedASyntheticFourthFailure() {
+        val store = ReconnectCircuitBreakerStore(breaker)
+        var states = emptyMap<String, ReconnectCircuitBreaker.State>()
+        var block: ReconnectCircuitBreakerStore.Block? = null
+        repeat(ReconnectCircuitBreaker.FAILURES_TO_TRIP) { index ->
+            val recorded = store.recordFailure(states, address, "round-$index", t0 + index * 61_000L)
+            states = recorded.first
+            block = recorded.second
+        }
+        val tripped = requireNotNull(block)
+        val afterTrip = requireNotNull(states[store.keyOf(address)])
+        assertEquals(ReconnectCircuitBreaker.FAILURES_TO_TRIP, afterTrip.failures)
+        assertEquals("round-2", afterTrip.recordedAttempt)
+
+        // 反证：若在熔断后仍开一条合成 attempt 并记账，就会得到上面描述的错误状态。
+        val (synthetic, syntheticBlock) =
+            store.recordFailure(states, address, "bt_retry-synthetic", tripped.untilMs - tripped.remainingMs + 61_000L)
+        val polluted = requireNotNull(synthetic[store.keyOf(address)])
+        assertNull("熔断中的第 4 次不应再次触发", syntheticBlock)
+        assertEquals(ReconnectCircuitBreaker.FAILURES_TO_TRIP + 1, polluted.failures)
+        assertEquals("bt_retry-synthetic", polluted.recordedAttempt)
+        assertTrue("冷却期会被再延长", polluted.blockedUntilMs > afterTrip.blockedUntilMs)
+    }
+
+    @Test
+    fun successClearsOnlyThatReceiversFailures() {
+        val other = "AA:BB:CC:DD:EE:02"
+        val store = ReconnectCircuitBreakerStore(breaker)
+        var states = store.recordFailure(emptyMap(), address, "a", t0).first
+        states = store.recordFailure(states, other, "b", t0 + 1_000L).first
+
+        states = store.recordHealthy(states, address)
+        assertNull(states[store.keyOf(address)])
+        assertEquals(1, states[store.keyOf(other)]!!.failures)
+    }
+
+    @Test
+    fun persistedStateCodecRoundTripsEachReceiver() {
+        val other = "AA:BB:CC:DD:EE:02"
+        val states =
+            mapOf(
+                address.uppercase() to
+                    ReconnectCircuitBreaker.State(
+                        address = address,
+                        failures = 2,
+                        firstFailureAtMs = 10L,
+                        lastFailureAtMs = 20L,
+                        blockedUntilMs = 0L,
+                        recordedAttempt = "attempt-a",
+                    ),
+                other.uppercase() to
+                    ReconnectCircuitBreaker.State(
+                        address = other,
+                        failures = 3,
+                        firstFailureAtMs = 15L,
+                        lastFailureAtMs = 25L,
+                        blockedUntilMs = 30L,
+                        recordedAttempt = "attempt-b",
+                    ),
+            )
+        assertEquals(states, decodeAutoReconnectStates(encodeAutoReconnectStates(states)))
+        assertEquals(emptyMap<String, ReconnectCircuitBreaker.State>(), decodeAutoReconnectStates("not-json"))
+        assertEquals(emptyMap<String, ReconnectCircuitBreaker.State>(), decodeAutoReconnectStates(null))
+    }
+
+    @Test
+    fun clockRollbackCannotExtendTheBlockForever() {
+        var state = ReconnectCircuitBreaker.State()
+        repeat(3) { index ->
+            state = fail(state, t0 + index * 1_000L).state
+        }
+        // 系统时钟回拨到熔断设置前很久：剩余时间超过冷却时长，视为失效而不是永久熔断
+        assertFalse(breaker.isBlocked(state, address, state.blockedUntilMs - ReconnectCircuitBreaker.COOLDOWN_MILLIS - 1L))
+        assertEquals(
+            ReconnectCircuitBreaker.COOLDOWN_MILLIS,
+            breaker.remainingMillis(state, state.blockedUntilMs - ReconnectCircuitBreaker.COOLDOWN_MILLIS - 1L),
+        )
+    }
+}
